@@ -31,14 +31,20 @@ module SlackRubyBotServer
             results = { results: [], next: nil }
             size = (params[:size] || 10).to_i
             results[:total_count] = coll.count(:all) if params[:total_count]
-            coll = coll.offset(params[:offset].to_i) if params.key?(:offset)
+            limited_coll = coll
+            limited_coll = coll.offset(params[:offset].to_i) if params.key?(:offset)
             sort_options = {}
             sort_order(options).each do |order|
-              sort_options[order[:column]] = { reverse: true } if order[:direction] == :desc
+              sort_options[order[:column]] = order[:direction]
             end
-            coll = coll.cursor(params[:cursor], columns: sort_options).per(size)
-            results[:results] = coll.to_a
-            results[:next] = coll.next_cursor.to_s unless coll.last_page?
+            limited_coll = limited_coll.where(sort_options['id'] == :desc ? 'id <= ?' : 'id >= ?', params[:cursor]) if params[:cursor]
+            limited_coll = limited_coll.order(sort_options).limit(size)
+            results[:results] = limited_coll.to_a
+            if sort_options['id'] == :desc
+              results[:next] = limited_coll.last.id - 1 unless coll.where('id <= ?', limited_coll.last.id - 1).length.zero?
+            else
+              results[:next] = limited_coll.last.id + 1 unless coll.where('id >= ?', limited_coll.last.id + 1).length.zero?
+            end
             results
           end
         end
